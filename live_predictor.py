@@ -1,98 +1,122 @@
 import requests
 import pandas as pd
 from sklearn.ensemble import RandomForestClassifier
+import glob  # Tool to find multiple files
 
 # --- CONFIGURATION ---
 API_KEY = "d3fc32609fd644b4a81bd82b35bf5366"
 BASE_URL = "https://api.football-data.org/v4"
 HEADERS = {"X-Auth-Token": API_KEY}
 
-# --- 1. TRAIN THE MODELS (The Brains) ---
-# To predict scores, we need training data that INCLUDES scores.
-# I've added 'HomeGoals' and 'AwayGoals' columns here.
-training_data = {
-    'HomeTeam': ['Arsenal', 'Man City', 'Liverpool', 'Chelsea', 'Man Utd', 'Arsenal', 'Liverpool'],
-    'AwayTeam': ['Man Utd', 'Chelsea', 'Arsenal', 'Liverpool', 'Man City', 'Chelsea', 'Everton'],
-    'HomeRank': [2, 1, 3, 5, 4, 2, 3],
-    'AwayRank': [4, 5, 2, 3, 1, 5, 8],
-    'HomeGoals': [3, 1, 1, 0, 1, 3, 2],  # Past home goals scored
-    'AwayGoals': [1, 0, 1, 0, 2, 1, 0],  # Past away goals scored
-    'Result':    [1, 1, 0, 0, 2, 1, 1]   # 1=Home Win, 0=Draw, 2=Away Win
-}
+# --- 1. LOAD & MERGE ALL SEASONS ---
+print("--- LOADING HISTORY ---")
+# This grabs ANY file ending in .csv (E0.csv, E0 (1).csv, etc.)
+all_files = glob.glob('*.csv') 
 
-# Team Dictionary
-team_codes = {
-    'Arsenal': 1, 'Aston Villa': 2, 'Bournemouth': 3, 'Brentford': 4,
-    'Brighton Hove': 5, 'Chelsea': 6, 'Crystal Palace': 7, 'Everton': 8,
-    'Fulham': 9, 'Liverpool': 10, 'Man City': 11, 'Man Utd': 12,
-    'Newcastle': 13, 'Nottingham': 14, 'Tottenham': 15, 'West Ham': 16,
-    'Wolverhampton': 17, 'Burnley': 18, 'Sheffield Utd': 19, 'Luton Town': 20,
-    'Ipswich Town': 21, 'Leicester City': 22, 'Southampton': 23
-}
+if not all_files:
+    print("ERROR: No CSV files found! Please move your E0.csv files into this folder.")
+    exit()
 
-df = pd.DataFrame(training_data)
+print(f"Found {len(all_files)} season files: {all_files}")
+
+df_list = []
+for filename in all_files:
+    try:
+        data = pd.read_csv(filename)
+        # Keep only necessary columns
+        data = data[['HomeTeam', 'AwayTeam', 'FTHG', 'FTAG', 'FTR']]
+        df_list.append(data)
+    except:
+        print(f"Skipping {filename} (File might be empty or wrong format)")
+
+# Combine all seasons into one big table
+if df_list:
+    df = pd.concat(df_list, ignore_index=True)
+else:
+    print("Error: Could not load any data.")
+    exit()
+
+# Map Results to Numbers
+df['Result'] = df['FTR'].map({'H': 1, 'D': 0, 'A': 2})
+
+# Learn every team name from the last 4 years
+all_teams = sorted(pd.concat([df['HomeTeam'], df['AwayTeam']]).dropna().unique())
+team_codes = {team: i for i, team in enumerate(all_teams)}
+
+# Create the "Average Team" code for generic backups
+avg_team_code = len(team_codes) // 2
+
+# Convert Names to Numbers
 df['HomeCode'] = df['HomeTeam'].map(team_codes)
 df['AwayCode'] = df['AwayTeam'].map(team_codes)
-features = df[['HomeCode', 'AwayCode', 'HomeRank', 'AwayRank']]
 
-# --- CREATING 3 SEPARATE MODELS ---
-# Model 1: Predicts the Winner
-rf_winner = RandomForestClassifier(n_estimators=50, random_state=42)
-rf_winner.fit(features, df['Result'])
+# Clean data
+df = df.dropna()
 
-# Model 2: Predicts Home Goals
-rf_home_goals = RandomForestClassifier(n_estimators=50, random_state=42)
-rf_home_goals.fit(features, df['HomeGoals'])
+print(f"Successfully loaded {len(df)} matches from {len(all_files)} seasons!")
+print(f"AI Brain now knows {len(team_codes)} unique teams (including Leeds, Burnley, etc.)")
 
-# Model 3: Predicts Away Goals
-rf_away_goals = RandomForestClassifier(n_estimators=50, random_state=42)
-rf_away_goals.fit(features, df['AwayGoals'])
 
-# --- 2. GET REAL DATA ---
-def get_rankings():
-    print("Fetching live League Table...")
-    try:
-        data = requests.get(f"{BASE_URL}/competitions/PL/standings", headers=HEADERS).json()
-        standings = data['standings'][0]['table']
-        ranks = {t['team']['shortName']: t['position'] for t in standings}
-        return ranks
-    except:
-        print("Could not fetch rankings. Using defaults.")
-        return {}
+# --- 2. TRAIN MODELS ---
+print("Training AI models...")
+X = df[['HomeCode', 'AwayCode']]
+rf_winner = RandomForestClassifier(n_estimators=100, random_state=42).fit(X, df['Result'])
+rf_home_goals = RandomForestClassifier(n_estimators=100, random_state=42).fit(X, df['FTHG'])
+rf_away_goals = RandomForestClassifier(n_estimators=100, random_state=42).fit(X, df['FTAG'])
 
-current_ranks = get_rankings()
+# --- 3. NAME TRANSLATOR ---
+name_translator = {
+    'Wolverhampton': 'Wolves',
+    'Brighton Hove': 'Brighton',
+    'Nottingham': "Nott'm Forest",
+    'West Ham': 'West Ham',
+    'Man United': 'Man United',
+    'Newcastle': 'Newcastle',
+    'Sheffield Utd': 'Sheffield United',
+    'Luton Town': 'Luton',
+    'Leeds United': 'Leeds'  # Now this will actually work!
+}
 
-# --- 3. PREDICT ---
+def get_team_code(api_name):
+    clean_name = name_translator.get(api_name, api_name)
+    if clean_name in team_codes:
+        return team_codes[clean_name], clean_name, False
+    else:
+        return avg_team_code, clean_name, True
+
+# --- 4. PREDICT ---
 print("\nFetching upcoming matches...")
-matches = requests.get(f"{BASE_URL}/competitions/PL/matches?status=SCHEDULED", headers=HEADERS).json()['matches']
+try:
+    matches = requests.get(f"{BASE_URL}/competitions/PL/matches?status=SCHEDULED", headers=HEADERS).json()['matches']
+except:
+    print("Error connecting to internet.")
+    exit()
 
-print(f"\n--- PREDICTED SCORE LINES ---\n")
+print(f"\n--- PREDICTIONS (Based on {len(df)} historical games) ---\n")
 
-for match in matches[:5]: # Predict next 5 games
-    home = match['homeTeam']['shortName']
-    away = match['awayTeam']['shortName']
+for match in matches[:10]: 
+    h_api = match['homeTeam']['shortName']
+    a_api = match['awayTeam']['shortName']
     
-    if home in team_codes and away in team_codes:
-        # Prepare Data
-        h_code = team_codes[home]
-        a_code = team_codes[away]
-        h_rank = current_ranks.get(home, 10)
-        a_rank = current_ranks.get(away, 10)
-        
-        match_input = pd.DataFrame([[h_code, a_code, h_rank, a_rank]], 
-                                  columns=['HomeCode', 'AwayCode', 'HomeRank', 'AwayRank'])
+    h_code, h_name, h_missing = get_team_code(h_api)
+    a_code, a_name, a_missing = get_team_code(a_api)
+    
+    match_data = pd.DataFrame([[h_code, a_code]], columns=['HomeCode', 'AwayCode'])
 
-        # ASK ALL 3 MODELS
-        pred_result = rf_winner.predict(match_input)[0]
-        pred_h_goals = rf_home_goals.predict(match_input)[0]
-        pred_a_goals = rf_away_goals.predict(match_input)[0]
-        
-        # Format the text
-        winner_text = "Draw"
-        if pred_result == 1: winner_text = home
-        if pred_result == 2: winner_text = away
-        
-        print(f"{home} vs {away}")
-        print(f"   Winner: {winner_text}")
-        print(f"   Score:  {pred_h_goals} - {pred_a_goals}")
-        print("-" * 30)
+    pred_winner = rf_winner.predict(match_data)[0]
+    pred_h = rf_home_goals.predict(match_data)[0]
+    pred_a = rf_away_goals.predict(match_data)[0]
+    
+    winner_text = "DRAW"
+    if pred_winner == 1: winner_text = f"{h_name} WINS"
+    if pred_winner == 2: winner_text = f"{a_name} WINS"
+    
+    # Add warning only if we truly don't know the team
+    warning = ""
+    if h_missing or a_missing:
+        warning = " (⚠️ Unknown Team)"
+    
+    print(f"{h_name} vs {a_name}")
+    print(f"   Prediction: {winner_text}{warning}")
+    print(f"   Score:      {pred_h} - {pred_a}")
+    print("-" * 30)
