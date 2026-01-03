@@ -62,9 +62,9 @@ To test the Football Match Predictor project, follow these steps:
 
 📸 Screenshots
 -------------
-[Placeholder for screenshot 1]
-[Placeholder for screenshot 2]
-[Placeholder for screenshot 3]
+<img width="470" height="247" alt="image" src="https://github.com/user-attachments/assets/545a1f24-c837-4db5-b7b8-2a61ea482adc" />
+<img width="880" height="208" alt="image" src="https://github.com/user-attachments/assets/ab4bac01-580a-4b9d-9340-83ad5a13e6b1" />
+
 
 📦 API Reference
 ----------------
