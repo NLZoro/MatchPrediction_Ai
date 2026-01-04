@@ -72,7 +72,7 @@ The Football Match Predictor project uses the Football Data API, which provides 
 
 👤 Author
 -------
-The Football Match Predictor project was created by [MEEE] https://github.com/NLZoro
+The Football Match Predictor project was created by [MEEE] (https://github.com/NLZoro)
 
 📝 License
 -------
