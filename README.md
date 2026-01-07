@@ -3,7 +3,7 @@
 **Football Match Predictor** 🏟️
 > "Predicting the beautiful game, one match at a time." ⚽️
 
-📖 Description
+📖 Description 
 -------------
 The Football Match Predictor is a Python-based project that utilizes machine learning algorithms to predict the outcome of football matches. The project uses historical data to train a model that can accurately forecast the result of a match. The primary goal of this project is to provide a reliable and efficient way to predict football match outcomes, which can be useful for various stakeholders, including football fans, coaches, and bettors.
 
