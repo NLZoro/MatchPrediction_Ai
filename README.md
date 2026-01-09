@@ -1,79 +1,92 @@
 🚀 Project Title & Tagline
-========================
+========================== 
 **Football Match Predictor** 🏟️
-> "Predicting the beautiful game, one match at a time." ⚽️
+*A machine learning model to predict the outcome of football matches*
 
-📖 Description 
--------------
-The Football Match Predictor is a Python-based project that utilizes machine learning algorithms to predict the outcome of football matches. The project uses historical data to train a model that can accurately forecast the result of a match. The primary goal of this project is to provide a reliable and efficient way to predict football match outcomes, which can be useful for various stakeholders, including football fans, coaches, and bettors.
+📖 Description
+=============== 
+The Football Match Predictor is a Python-based project that utilizes machine learning algorithms to predict the outcome of football matches. The project consists of three main components: data preparation, model training, and prediction. The data preparation step involves collecting and processing data from various sources, including team rankings, past match results, and other relevant factors. The model training step uses a random forest classifier to train a model on the prepared data. The prediction step uses the trained model to predict the outcome of upcoming matches.
 
-The project consists of two main components: data preparation and model training. The `main.py` file is responsible for creating and preparing the data, while the `live_predictor.py` file uses the trained model to make predictions on new, unseen data. The project uses the popular `scikit-learn` library to implement the machine learning algorithms and the `pandas` library to handle data manipulation.
+The project uses a combination of data analysis, machine learning, and web development to create a user-friendly interface for users to input match data and receive predictions. The project aims to provide an accurate and reliable prediction system for football enthusiasts and professionals alike. The system can be used to predict match outcomes, identify trends, and gain insights into team performance.
 
-The Football Match Predictor project has numerous potential applications, including fantasy football, betting, and team performance analysis. By providing accurate predictions, the project can help users make informed decisions and gain a competitive edge. The project's codebase is well-structured, readable, and easy to maintain, making it an ideal starting point for further development and customization.
+The Football Match Predictor project is designed to be scalable, flexible, and easy to maintain. The project uses a modular architecture, with each component designed to be independent and reusable. The project also includes a web application component, built using Streamlit, which provides a user-friendly interface for users to interact with the system. The web application allows users to input match data, view predictions, and explore trends and insights.
 
 ✨ Features
---------
-The following features are included in the Football Match Predictor project:
-1. **Data Preparation**: The project includes a comprehensive data preparation pipeline that handles data cleaning, feature engineering, and data splitting.
-2. **Model Training**: The project uses a Random Forest Classifier to train a model on the prepared data, which can be fine-tuned for optimal performance.
-3. **Live Predictions**: The `live_predictor.py` file enables users to make predictions on new data using the trained model.
-4. **API Integration**: The project integrates with the Football Data API to fetch real-time data and make predictions.
-5. **Configurable**: The project includes a configuration section that allows users to customize the API key, base URL, and other settings.
-6. **Data Visualization**: The project includes placeholders for data visualization, which can be used to display the predictions and results.
-7. **Error Handling**: The project includes basic error handling to ensure that the program can recover from unexpected errors.
-8. **Code Quality**: The project adheres to standard coding practices, including readable variable names, comments, and docstrings.
+========== 
+The following are the key features of the Football Match Predictor project:
+
+1. **Data Preparation**: The project includes a data preparation step that collects and processes data from various sources, including team rankings, past match results, and other relevant factors.
+2. **Model Training**: The project uses a random forest classifier to train a model on the prepared data.
+3. **Prediction**: The project uses the trained model to predict the outcome of upcoming matches.
+4. **Web Application**: The project includes a web application component, built using Streamlit, which provides a user-friendly interface for users to interact with the system.
+5. **User Input**: The web application allows users to input match data, including team names, rankings, and other relevant factors.
+6. **Prediction Output**: The web application displays the predicted outcome of the match, including the probability of each possible outcome.
+7. **Trend Analysis**: The web application includes a trend analysis component, which allows users to explore trends and insights into team performance.
+8. **Data Visualization**: The web application includes data visualization components, which allow users to view match data and predictions in a graphical format.
 
 🧰 Tech Stack Table
--------------------
+=================== 
+The following table summarizes the technology stack used in the Football Match Predictor project:
+
 | Component | Technology |
 | --- | --- |
-| Frontend | N/A |
-| Backend | Python 3.x |
-| Machine Learning | scikit-learn |
-| Data Manipulation | pandas |
-| API Integration | requests |
-| Data Storage | N/A |
+| Frontend | Streamlit |
+| Backend | Python |
+| Machine Learning | Scikit-learn |
+| Data Analysis | Pandas |
+| Data Visualization | Matplotlib |
+| API | Requests |
 
 📁 Project Structure
--------------------
-The project consists of the following folders and files:
-* `main.py`: The main entry point of the project, responsible for data preparation and model training.
-* `live_predictor.py`: The file responsible for making live predictions using the trained model.
-* `data/`: A folder that stores the historical data used for training the model.
-* `models/`: A folder that stores the trained models.
-* `config/`: A folder that stores the configuration files, including the API key and base URL.
-* `utils/`: A folder that stores utility functions, including data visualization and error handling.
+==================== 
+The Football Match Predictor project has the following directory structure:
+
+* `data`: This directory contains the data used to train the model, including team rankings, past match results, and other relevant factors.
+* `models`: This directory contains the trained model, including the random forest classifier and other relevant files.
+* `webapp`: This directory contains the web application component, built using Streamlit.
+* `utils`: This directory contains utility functions, including data preparation and prediction functions.
+* `main.py`: This file contains the main entry point for the project, including the data preparation, model training, and prediction steps.
+* `live_predictor.py`: This file contains the live prediction component, which uses the trained model to predict the outcome of upcoming matches.
+* `webapp.py`: This file contains the web application component, which provides a user-friendly interface for users to interact with the system.
 
 ⚙️ How to Run
--------------
+============== 
 To run the Football Match Predictor project, follow these steps:
-1. **Setup**: Install the required dependencies, including `scikit-learn`, `pandas`, and `requests`.
-2. **Environment**: Create a new Python environment using `conda` or `virtualenv`.
-3. **Build**: Run the `main.py` file to prepare the data and train the model.
-4. **Deploy**: Run the `live_predictor.py` file to make live predictions using the trained model.
-5. **Configuration**: Update the `config.py` file with your API key and base URL.
+
+1. **Setup**: Clone the repository and navigate to the project directory.
+2. **Environment**: Create a virtual environment using `python -m venv env` and activate it using `source env/bin/activate`.
+3. **Dependencies**: Install the required dependencies using `pip install -r requirements.txt`.
+4. **Build**: Build the project using `python main.py`.
+5. **Deploy**: Deploy the web application using `streamlit run webapp.py`.
 
 🧪 Testing Instructions
-----------------------
+===================== 
 To test the Football Match Predictor project, follow these steps:
-1. **Unit Testing**: Run the `unittest` framework to test individual components, including data preparation and model training.
-2. **Integration Testing**: Run the `live_predictor.py` file to test the entire pipeline, including API integration and prediction.
-3. **Validation**: Validate the predictions using a separate dataset to ensure accuracy and reliability.
 
-📸 Screenshots  
--------------
-<img width="470" height="247" alt="image" src="https://github.com/user-attachments/assets/545a1f24-c837-4db5-b7b8-2a61ea482adc" />
-<img width="880" height="208" alt="image" src="https://github.com/user-attachments/assets/ab4bac01-580a-4b9d-9340-83ad5a13e6b1" />
+1. **Unit Testing**: Run the unit tests using `python -m unittest tests/test_main.py`.
+2. **Integration Testing**: Run the integration tests using `python -m unittest tests/test_webapp.py`.
+3. **Live Testing**: Test the live prediction component using `python live_predictor.py`.
 
+📸 Screenshots
+============== 
+The following screenshots demonstrate the web application component:
+
+* **Home Page**: [Placeholder image]
+* **Match Input**: [Placeholder image]
+* **Prediction Output**: [Placeholder image]
+* **Trend Analysis**: [Placeholder image]
 
 📦 API Reference
-----------------
-The Football Match Predictor project uses the Football Data API, which provides real-time data on football matches. The API documentation can be found at [https://api.football-data.org/v4/docs](https://api.football-data.org/v4/docs).
+================ 
+The Football Match Predictor project includes an API component, which provides a programmatic interface for interacting with the system. The API includes the following endpoints:
+
+* **/predict**: This endpoint accepts a JSON payload containing match data and returns a JSON response containing the predicted outcome.
+* **/trends**: This endpoint returns a JSON response containing trend data and insights into team performance.
 
 👤 Author
--------
-The Football Match Predictor project was created by [MEEE] (https://github.com/NLZoro).
+========== 
+The Football Match Predictor project was developed by [Your Name].
 
 📝 License
--------
-The Football Match Predictor project is licensed under the [MIT License](https://opensource.org/licenses/MIT).
+========== 
+The Football Match Predictor project is licensed under the [License Name] license. See the [License File] for more information.
