@@ -60,7 +60,7 @@ To test the Football Match Predictor project, follow these steps:
 2. **Integration Testing**: Run the `live_predictor.py` file to test the entire pipeline, including API integration and prediction.
 3. **Validation**: Validate the predictions using a separate dataset to ensure accuracy and reliability.
 
-📸 Screenshots
+📸 Screenshots  
 -------------
 <img width="470" height="247" alt="image" src="https://github.com/user-attachments/assets/545a1f24-c837-4db5-b7b8-2a61ea482adc" />
 <img width="880" height="208" alt="image" src="https://github.com/user-attachments/assets/ab4bac01-580a-4b9d-9340-83ad5a13e6b1" />
