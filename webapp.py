@@ -12,7 +12,6 @@ st.title("⚽ Premier League AI Predictor")
 st.write("This AI learns from 4 years of history + recent form to predict upcoming matches.")
 
 # --- CONFIGURATION ---
-# This looks for the key inside the Cloud's secret box (or local .streamlit/secrets.toml)
 try:
     API_KEY = st.secrets["FOOTBALL_API_KEY"]
 except FileNotFoundError:
@@ -28,7 +27,7 @@ def load_and_train_model():
     # Load all CSV files
     all_files = glob.glob('*.csv') 
     if not all_files:
-        return None, None, None, None, None
+        return None, None, None, None, None, None # Added one more None
 
     df_list = []
     for filename in all_files:
@@ -39,7 +38,7 @@ def load_and_train_model():
         except:
             pass
 
-    if not df_list: return None, None, None, None, None
+    if not df_list: return None, None, None, None, None, None
 
     # Merge and Clean
     df = pd.concat(df_list, ignore_index=True)
@@ -80,7 +79,8 @@ def load_and_train_model():
     rf_home_goals = RandomForestClassifier(n_estimators=100, random_state=42).fit(X, df['FTHG'])
     rf_away_goals = RandomForestClassifier(n_estimators=100, random_state=42).fit(X, df['FTAG'])
     
-    return rf_winner, rf_home_goals, rf_away_goals, team_codes, team_results
+    # Return df as well now!
+    return rf_winner, rf_home_goals, rf_away_goals, team_codes, team_results, df
 
 # --- 2. FUNCTION: FETCH LEAGUE TABLE ---
 @st.cache_data
@@ -113,7 +113,8 @@ def get_league_table():
 
 # --- LOAD AI ---
 with st.spinner("Training AI on historical data..."):
-    rf_winner, rf_h_goals, rf_a_goals, team_codes, final_form = load_and_train_model()
+    # Catch the df_history here
+    rf_winner, rf_h_goals, rf_a_goals, team_codes, final_form, df_history = load_and_train_model()
 
 if rf_winner is None:
     st.error("Error: No CSV files found! Please move your E0.csv files to this folder.")
@@ -134,6 +135,38 @@ def get_team_data(name):
         return code, form, clean
     else:
         return len(team_codes)//2, 7, clean
+
+# --- NEW: H2H CALCULATOR ---
+def get_h2h_stats(h_team, a_team):
+    # Filter for games between these two teams
+    if df_history is None: return 0, 0, 0, []
+    
+    mask = ((df_history['HomeTeam'] == h_team) & (df_history['AwayTeam'] == a_team)) | \
+           ((df_history['HomeTeam'] == a_team) & (df_history['AwayTeam'] == h_team))
+    
+    h2h_games = df_history[mask].sort_values('Date', ascending=False).head(5)
+    
+    h_wins = 0
+    a_wins = 0
+    draws = 0
+    recent_scores = []
+    
+    for _, row in h2h_games.iterrows():
+        date_str = row['Date'].strftime("%Y-%m-%d")
+        score = f"{row['HomeTeam']} {int(row['FTHG'])} - {int(row['FTAG'])} {row['AwayTeam']}"
+        recent_scores.append(f"{date_str}: {score}")
+        
+        # Determine winner relative to REQUESTED home team
+        if row['Result'] == 1: # Home Team in that match won
+            if row['HomeTeam'] == h_team: h_wins += 1
+            else: a_wins += 1
+        elif row['Result'] == 2: # Away Team in that match won
+            if row['AwayTeam'] == a_team: a_wins += 1
+            else: h_wins += 1
+        else:
+            draws += 1
+            
+    return h_wins, draws, a_wins, recent_scores
 
 # --- MAIN INTERFACE (TABS) ---
 tab1, tab2 = st.tabs(["🔮 Predictions", "🏆 League Table"])
@@ -209,6 +242,14 @@ with tab1:
                             st.write(f"**{a_name}**")
                             st.caption(f"Form: {a_form}/15")
                         
+                        # --- H2H EXPANDER (NEW!) ---
+                        h_wins, draws, a_wins, past_games = get_h2h_stats(h_name, a_name)
+                        with st.expander(f"📜 Head-to-Head: {h_name} vs {a_name}"):
+                            st.write(f"**Past {len(past_games)} Meetings:**")
+                            st.write(f"🟢 {h_name} Wins: **{h_wins}** | ⚪ Draws: **{draws}** | 🔴 {a_name} Wins: **{a_wins}**")
+                            for game in past_games:
+                                st.caption(game)
+
                         st.divider()
 
             except Exception as e:
@@ -244,6 +285,12 @@ if st.sidebar.button("Predict Custom Match"):
     st.sidebar.success(f"Result: {res}")
     st.sidebar.write(f"Confidence: {max(probs)*100:.0f}%")
     
+    # H2H Sidebar (Optional Bonus)
+    h_wins, draws, a_wins, past_games = get_h2h_stats(h_team, a_team)
+    st.sidebar.markdown("---")
+    st.sidebar.write(f"**Head-to-Head History**")
+    st.sidebar.caption(f"{h_team}: {h_wins} | Draws: {draws} | {a_team}: {a_wins}")
+
     # Simple bar chart for sidebar
     fig, ax = plt.subplots(figsize=(4,2))
     ax.bar([h_team, 'Draw', a_team], [probs[1], probs[0], probs[2]], color=['#2ecc71', '#95a5a6', '#e74c3c'])
