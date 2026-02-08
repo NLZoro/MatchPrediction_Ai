@@ -5,13 +5,14 @@ import plotly.graph_objects as go
 from sklearn.ensemble import RandomForestClassifier
 import glob
 import numpy as np 
+import random
 
 # --- PAGE CONFIGURATION ---
 st.set_page_config(page_title="Football AI", page_icon="⚽", layout="centered")
 
 # --- 1. TITLE & HEADER ---
 st.title("⚽ Premier League AI")
-st.caption("Live Intelligence • Season 2025/26")
+st.caption("Live Intelligence • Match Flow Simulation 🌊")
 
 # --- 2. CSS STYLING ---
 st.markdown("""
@@ -56,20 +57,12 @@ HEADERS = {"X-Auth-Token": API_KEY}
 
 # --- 3. HELPER FUNCTIONS ---
 def get_safe_stats(recent_games):
-    """Safely calculate stats from live games, handling empty lists."""
-    if not recent_games: return 5.0, 5.0, 5.0 # Default if no data
-    
-    # Form: Points (W=3, D=1, L=0) normalized to 0-10
+    if not recent_games: return 5.0, 5.0, 5.0 
     pts = sum([3 if x['res']=='W' else 1 if x['res']=='D' else 0 for x in recent_games])
     form_score = (pts / (len(recent_games)*3)) * 10 if len(recent_games) > 0 else 5
-    
-    # Attack: Avg Goals Scored * 3 (Max 10)
     att = min(np.mean([x['gf'] for x in recent_games]) * 3.5, 10)
-    
-    # Defense: (3 - Avg Goals Conceded) * 3 (Max 10). Low GA = High Def Score.
     ga_avg = np.mean([x['ga'] for x in recent_games])
     defe = max(min((2.5 - ga_avg) * 4, 10), 1)
-    
     return form_score, att, defe
 
 def create_interactive_radar(team_name, stats, color):
@@ -82,7 +75,6 @@ def create_trend_chart(recent_games, color):
     gf = [g['gf'] for g in recent_games]
     ga = [g['ga'] for g in recent_games]
     x = [f"vs {g['opp']}" for g in recent_games]
-    
     fig = go.Figure()
     fig.add_trace(go.Scatter(x=x, y=gf, mode='lines+markers', name='GF', line=dict(color=color, width=3)))
     fig.add_trace(go.Scatter(x=x, y=ga, mode='lines', name='GA', line=dict(color='rgba(255,255,255,0.5)', width=1, dash='dot')))
@@ -91,7 +83,7 @@ def create_trend_chart(recent_games, color):
 
 def render_form_guide(recent_games):
     html = "<div style='display: flex; justify-content: center; margin-bottom: 10px; gap:4px;'>"
-    for game in recent_games: # Already sorted Old -> New
+    for game in recent_games:
         res = game['res']
         tooltip = f"vs {game['opp']} ({game['gf']}-{game['ga']})"
         cls = 'win' if res == 'W' else 'loss' if res == 'L' else 'draw'
@@ -107,90 +99,108 @@ def generate_scout_report(h_name, a_name, h_stats, a_stats, prediction, conf):
     elif a_stats[1] > h_stats[2] + 2: report += f"⚔️ **Mismatch:** {a_name}'s attack poses a massive threat to {h_name}.\n"
     return report
 
-# --- 4. DATA ENGINE (MODELS + LIVE FORM) ---
-@st.cache_data(ttl=3600) # Update every hour
+# --- NEW: CINEMATIC MOMENTUM PULSE ---
+def create_momentum_pulse(h_name, a_name, h_goals, a_goals, h_col, a_col):
+    """Creates a smooth, spline-interpolated 'Tug of War' chart."""
+    intervals = np.arange(0, 95, 5) 
+    momentum = []
+    current_val = 0
+    for _ in intervals:
+        sway = np.random.randint(-15, 15) 
+        current_val += sway
+        current_val = max(min(current_val, 80), -80)
+        momentum.append(current_val)
+        
+    events_x = []; events_y = []; events_text = []; events_color = []
+    
+    for _ in range(int(h_goals)):
+        t = random.randint(10, 85)
+        idx = int(t / 5)
+        momentum[idx] = 90 
+        if idx+1 < len(momentum): momentum[idx+1] = 60 
+        events_x.append(t); events_y.append(95); events_text.append(f"⚽ {h_name}"); events_color.append(h_col)
+
+    for _ in range(int(a_goals)):
+        t = random.randint(10, 85)
+        idx = int(t / 5)
+        momentum[idx] = -90 
+        if idx+1 < len(momentum): momentum[idx+1] = -60
+        events_x.append(t); events_y.append(-95); events_text.append(f"⚽ {a_name}"); events_color.append(a_col)
+
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(x=intervals, y=momentum, mode='lines', line_shape='spline', line=dict(color='white', width=3), fill='tozeroy', name='Momentum', hoverinfo='skip'))
+    
+    if events_x:
+        fig.add_trace(go.Scatter(x=events_x, y=events_y, mode='markers+text', text=events_text, textposition=["top center" if y > 0 else "bottom center" for y in events_y], marker=dict(size=12, color=events_color, symbol='diamond', line=dict(width=2, color='white')), textfont=dict(color='white', size=10), showlegend=False))
+
+    fig.update_layout(
+        title=dict(text="Match Flow Simulation", font=dict(color='gray', size=12), x=0.5),
+        xaxis=dict(showgrid=False, zeroline=False, visible=False, range=[0, 90]),
+        yaxis=dict(showgrid=False, zeroline=True, zerolinecolor='rgba(255,255,255,0.2)', visible=False, range=[-110, 110]),
+        paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', margin=dict(l=0, r=0, t=30, b=10), height=150, showlegend=False
+    )
+    return fig
+
+# --- 4. DATA ENGINE ---
+@st.cache_data(ttl=3600)
 def get_live_form_data():
     try:
-        # Fetch 2025/26 season (or current)
         url = f"{BASE_URL}/competitions/PL/matches?status=FINISHED"
         response = requests.get(url, headers=HEADERS)
         response.raise_for_status()
         data = response.json()
-        
-        # 1. Sort matches by date to ensure accuracy
         matches = sorted(data['matches'], key=lambda x: x['utcDate'])
         
         form_db = {}
         for m in matches:
-            h_team = m['homeTeam']['shortName']
-            a_team = m['awayTeam']['shortName']
-            h_score = m['score']['fullTime']['home']
-            a_score = m['score']['fullTime']['away']
-            
+            h_team, a_team = m['homeTeam']['shortName'], m['awayTeam']['shortName']
+            h_score, a_score = m['score']['fullTime']['home'], m['score']['fullTime']['away']
             if h_team not in form_db: form_db[h_team] = []
             if a_team not in form_db: form_db[a_team] = []
             
-            # Save Opponent Name for Tooltips
             res_h = 'W' if h_score > a_score else 'L' if h_score < a_score else 'D'
             form_db[h_team].append({'res': res_h, 'gf': h_score, 'ga': a_score, 'opp': a_team})
-            
             res_a = 'W' if a_score > h_score else 'L' if a_score < h_score else 'D'
             form_db[a_team].append({'res': res_a, 'gf': a_score, 'ga': h_score, 'opp': h_team})
             
-        # Keep only last 5
         for t in form_db: form_db[t] = form_db[t][-5:]
         return form_db
-    except Exception as e:
-        return {}
+    except: return {}
 
 @st.cache_data
 def load_and_train_model():
     all_files = glob.glob('*.csv')
-    if not all_files: return None, None, None
+    if not all_files: return None, None, None, None, None
     df_list = []
     for f in all_files:
         try: df_list.append(pd.read_csv(f))
         except: pass
-    if not df_list: return None, None, None
-    
-    df = pd.concat(df_list, ignore_index=True)
+    if not df_list: return None, None, None, None, None
+    df = pd.concat(df_list, ignore_index=True).dropna(subset=['HomeTeam', 'AwayTeam'])
     df['Result'] = df['FTR'].map({'H': 1, 'D': 0, 'A': 2})
-    
-    # --- CRITICAL FIX: CLEAN DATA BEFORE SORTING ---
-    # Ensure HomeTeam and AwayTeam are strings and remove NaN rows
-    df = df.dropna(subset=['HomeTeam', 'AwayTeam'])
-    df['HomeTeam'] = df['HomeTeam'].astype(str)
-    df['AwayTeam'] = df['AwayTeam'].astype(str)
-    
     all_teams = sorted(pd.concat([df['HomeTeam'], df['AwayTeam']]).unique())
     team_codes = {team: i for i, team in enumerate(all_teams)}
     df['HomeCode'] = df['HomeTeam'].map(team_codes).fillna(0)
     df['AwayCode'] = df['AwayTeam'].map(team_codes).fillna(0)
-    
-    # Simple features available in CSV
-    features = ['HomeCode', 'AwayCode'] 
-    X = df[features].fillna(0)
-    y = df['Result']
-    
-    rf = RandomForestClassifier(n_estimators=100, random_state=42).fit(X, y)
-    return rf, team_codes, team_codes 
+    X = df[['HomeCode', 'AwayCode']].fillna(0)
+    rf_winner = RandomForestClassifier(n_estimators=100, random_state=42).fit(X, df['Result'])
+    rf_home_goals = RandomForestClassifier(n_estimators=100, random_state=42).fit(X, df['FTHG'])
+    rf_away_goals = RandomForestClassifier(n_estimators=100, random_state=42).fit(X, df['FTAG'])
+    return rf_winner, rf_home_goals, rf_away_goals, team_codes, team_codes
 
 # --- LOAD DATA ---
 with st.spinner("Connecting to Premier League Live Data..."):
-    rf_model, team_map, _ = load_and_train_model()
+    rf, rf_hg, rf_ag, team_map, _ = load_and_train_model()
     live_form_db = get_live_form_data() 
 
-if not live_form_db:
-    st.error("⚠️ API Connection Error. Showing basic mode.")
-    # Fallback to empty if API fails
-    live_form_db = {}
+if not live_form_db: st.error("⚠️ API Connection Error."); st.stop()
 
 # --- MAIN ---
 tab1, tab2 = st.tabs(["🔮 Match Center", "🏆 Standings"])
 
 with tab1:
     if st.button("🚀 PREDICT NEXT MATCHES"):
-        with st.spinner("Analyzing Live Form..."):
+        with st.spinner("Simulating Match Flow..."):
             try:
                 res = requests.get(f"{BASE_URL}/competitions/PL/matches?status=SCHEDULED", headers=HEADERS)
                 matches = res.json()['matches']
@@ -198,29 +208,21 @@ with tab1:
                 for m in matches[:5]:
                     h_name = m['homeTeam']['shortName']
                     a_name = m['awayTeam']['shortName']
+                    h_recent = live_form_db.get(h_name, []); a_recent = live_form_db.get(a_name, [])
+                    h_stats = get_safe_stats(h_recent); a_stats = get_safe_stats(a_recent)
+                    h_code = next((v for k,v in team_map.items() if h_name in k or k in h_name), 0)
+                    a_code = next((v for k,v in team_map.items() if a_name in k or k in a_name), 0)
                     
-                    # 1. Get Live Stats
-                    h_recent = live_form_db.get(h_name, [])
-                    a_recent = live_form_db.get(a_name, [])
-                    
-                    h_stats = get_safe_stats(h_recent)
-                    a_stats = get_safe_stats(a_recent)
-                    
-                    # 2. Predict (Map API Name -> CSV Code)
-                    # Fuzzy match API name to CSV name
-                    h_csv_code = next((v for k,v in team_map.items() if h_name in k or k in h_name), 0)
-                    a_csv_code = next((v for k,v in team_map.items() if a_name in k or k in a_name), 0)
-                    
-                    input_data = pd.DataFrame([[h_csv_code, a_csv_code]], columns=['HomeCode', 'AwayCode'])
-                    pred_code = rf_model.predict(input_data)[0]
-                    probs = rf_model.predict_proba(input_data)[0]
-                    conf = max(probs)
+                    input_data = pd.DataFrame([[h_code, a_code]], columns=['HomeCode', 'AwayCode'])
+                    pred_code = rf.predict(input_data)[0]
+                    probs = rf.predict_proba(input_data)[0]
+                    pred_h_g = int(rf_hg.predict(input_data)[0])
+                    pred_a_g = int(rf_ag.predict(input_data)[0])
                     
                     if pred_code == 1: winner = f"{h_name} Wins"; h_col, a_col = '#4ade80', '#f87171'
                     elif pred_code == 2: winner = f"{a_name} Wins"; h_col, a_col = '#f87171', '#4ade80'
                     else: winner = "Draw"; h_col, a_col = '#22d3ee', '#22d3ee'
 
-                    # UI
                     with st.container():
                         col1, col2, col3 = st.columns([1.2, 1.6, 1.2])
                         with col1:
@@ -229,17 +231,14 @@ with tab1:
                             st.markdown(render_form_guide(h_recent), unsafe_allow_html=True)
                             st.plotly_chart(create_interactive_radar(h_name, h_stats, h_col), use_container_width=True, config={'displayModeBar': False})
                         with col2:
-                            st.markdown(f"<h2 style='text-align: center; color:white;'>VS</h2>", unsafe_allow_html=True)
+                            st.markdown(f"<h1 style='text-align:center;margin:0;'>{pred_h_g} - {pred_a_g}</h1>", unsafe_allow_html=True)
                             st.markdown(f"<p style='text-align: center; color: #94a3b8; font-weight: 600;'>{winner}</p>", unsafe_allow_html=True)
-                            scout = generate_scout_report(h_name, a_name, h_stats, a_stats, winner, conf)
-                            st.info(scout, icon="🤖")
-                            st.progress(conf)
+                            st.plotly_chart(create_momentum_pulse(h_name, a_name, pred_h_g, pred_a_g, h_col, a_col), use_container_width=True, config={'displayModeBar': False})
                         with col3:
                             try: st.image(m['awayTeam'].get('crest', ''), width=50)
                             except: pass
                             st.markdown(render_form_guide(a_recent), unsafe_allow_html=True)
                             st.plotly_chart(create_interactive_radar(a_name, a_stats, a_col), use_container_width=True, config={'displayModeBar': False})
-
             except Exception as e: st.error(f"Error: {e}")
 
 with tab2:
@@ -248,46 +247,37 @@ with tab2:
         try:
             r = requests.get(f"{BASE_URL}/competitions/PL/standings", headers=HEADERS)
             t = r.json()['standings'][0]['table']
-            return pd.DataFrame([{'Pos': x['position'], 'Team': x['team']['shortName'], 'P': x['playedGames'], 'Pts': x['points'], 'GD': x['goalDifference']} for x in t])
+            # Fetching crest + data
+            return pd.DataFrame([{'Pos': x['position'], 'Logo': x['team']['crest'], 'Team': x['team']['shortName'], 'P': x['playedGames'], 'Pts': x['points'], 'GD': x['goalDifference']} for x in t])
         except: return None
     st.header("Standings")
     t = get_table()
-    if t is not None: st.dataframe(t.set_index('Pos'), use_container_width=True)
+    if t is not None:
+        # Display with Image Column for Logos
+        st.dataframe(
+            t.set_index('Pos'), 
+            use_container_width=True,
+            column_config={
+                "Logo": st.column_config.ImageColumn("Logo", width="small")
+            }
+        )
 
-# --- SIDEBAR (Now using LIVE DATA) ---
+# --- SIDEBAR ---
 st.sidebar.header("Manual Simulator")
-# Sort teams alphabetically
 teams_list = sorted(list(live_form_db.keys())) if live_form_db else ["Arsenal", "Aston Villa"]
 h_team = st.sidebar.selectbox("Home", teams_list)
 a_team = st.sidebar.selectbox("Away", teams_list, index=1)
 
 if st.sidebar.button("Simulate"):
-    h_r = live_form_db.get(h_team, [])
-    a_r = live_form_db.get(a_team, [])
-    h_stats = get_safe_stats(h_r)
-    a_stats = get_safe_stats(a_r)
-    
-    # Fuzzy match API name to CSV code
-    h_csv_code = next((v for k,v in team_map.items() if h_team in k or k in h_team), 0)
-    a_csv_code = next((v for k,v in team_map.items() if a_team in k or k in a_team), 0)
-    
-    input_data = pd.DataFrame([[h_csv_code, a_csv_code]], columns=['HomeCode', 'AwayCode'])
-    pred = rf_model.predict(input_data)[0]
-    probs = rf_model.predict_proba(input_data)[0]
-    
+    h_r = live_form_db.get(h_team, []); a_r = live_form_db.get(a_team, [])
+    h_csv = next((v for k,v in team_map.items() if h_team in k or k in h_team), 0)
+    a_csv = next((v for k,v in team_map.items() if a_team in k or k in a_team), 0)
+    input_data = pd.DataFrame([[h_csv, a_csv]], columns=['HomeCode', 'AwayCode'])
+    pred = rf.predict(input_data)[0]
+    hg = int(rf_hg.predict(input_data)[0]); ag = int(rf_ag.predict(input_data)[0])
     res = f"{h_team} Wins" if pred == 1 else f"{a_team} Wins" if pred == 2 else "Draw"
-    st.sidebar.success(f"{res} ({max(probs)*100:.0f}%)")
-    
-    # Dynamic Colors
-    h_col = '#4ade80' if pred == 1 else '#f87171' if pred == 2 else '#22d3ee'
-    a_col = '#4ade80' if pred == 2 else '#f87171' if pred == 1 else '#22d3ee'
-
-    st.sidebar.write("---")
-    st.sidebar.markdown(f"**{h_team} Form**")
-    st.sidebar.markdown(render_form_guide(h_r), unsafe_allow_html=True)
-    st.sidebar.plotly_chart(create_trend_chart(h_r, h_col), use_container_width=True, config={'displayModeBar': False})
-    
-    st.sidebar.write("---")
-    st.sidebar.markdown(f"**{a_team} Form**")
-    st.sidebar.markdown(render_form_guide(a_r), unsafe_allow_html=True)
-    st.sidebar.plotly_chart(create_trend_chart(a_r, a_col), use_container_width=True, config={'displayModeBar': False})
+    st.sidebar.success(f"{res} ({max(rf.predict_proba(input_data)[0])*100:.0f}%)")
+    st.sidebar.plotly_chart(create_momentum_pulse(h_team, a_team, hg, ag, '#4ade80', '#f87171'), use_container_width=True, config={'displayModeBar': False})
+    c1, c2 = st.sidebar.columns(2)
+    c1.plotly_chart(create_trend_chart(h_r, '#4ade80'), use_container_width=True, config={'displayModeBar': False})
+    c2.plotly_chart(create_trend_chart(a_r, '#f87171'), use_container_width=True, config={'displayModeBar': False})
