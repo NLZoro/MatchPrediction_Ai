@@ -21,10 +21,22 @@ except:
 BASE_URL = "https://api.football-data.org/v4"
 HEADERS = {"X-Auth-Token": API_KEY}
 
+# --- 2. AI SETUP (AUTO-DISCOVERY) ---
+ACTIVE_MODEL = None
 if GEMINI_KEY:
     genai.configure(api_key=GEMINI_KEY)
+    try:
+        # Try to find a valid model dynamically
+        available_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+        # Prefer flash, then pro, then whatever is available
+        if 'models/gemini-1.5-flash' in available_models: ACTIVE_MODEL = 'gemini-1.5-flash'
+        elif 'models/gemini-pro' in available_models: ACTIVE_MODEL = 'gemini-pro'
+        elif available_models: ACTIVE_MODEL = available_models[0].replace('models/', '')
+        else: ACTIVE_MODEL = "gemini-pro" # Fallback
+    except:
+        ACTIVE_MODEL = "gemini-pro" # Fallback if list_models fails
 
-# --- 2. LEAGUE SYSTEM ---
+# --- 3. LEAGUE CONFIGURATION ---
 LEAGUES = {
     "Premier League": {"code": "PL", "div": "E0", "theme": {"bg": "#37003c", "accent": "#00ff85", "grad": "radial-gradient(circle at top left, #37003c 0%, #000000 100%)"}, "icon": "🦁"},
     "La Liga": {"code": "PD", "div": "SP1", "theme": {"bg": "#ee8707", "accent": "#ffcc00", "grad": "radial-gradient(circle at top left, #991f1f 0%, #000000 100%)"}, "icon": "🇪🇸"},
@@ -39,15 +51,13 @@ selected_league_name = st.sidebar.selectbox("Choose Competition", list(LEAGUES.k
 CURRENT_LEAGUE = LEAGUES[selected_league_name]
 theme = CURRENT_LEAGUE["theme"]
 
-# --- 3. CSS STYLING ---
+# --- CSS STYLING ---
 st.markdown(f"""
 <style>
     .stApp {{ background: {theme['grad']}; }}
     h1, h2, h3, p, label, .stMarkdown {{ color: white !important; }}
-    
     .form-badge {{ display: inline-block; width: 28px; height: 28px; border-radius: 6px; margin-right: 4px; text-align: center; font-size: 12px; font-weight: 800; line-height: 28px; color: #1e293b; cursor: help; }}
     .win {{ background-color: #4ade80; }} .draw {{ background-color: #94a3b8; }} .loss {{ background-color: #f87171; }}
-    
     div[data-testid="stContainer"] {{ background-color: rgba(20, 20, 20, 0.6); backdrop-filter: blur(12px); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 16px; padding: 24px; position: relative; z-index: 2; }}
     div.stButton > button {{ background: linear-gradient(135deg, {theme['bg']}, #444); border: 1px solid {theme['accent']}; color: white; border-radius: 12px; font-weight: 700; }}
 </style>
@@ -74,7 +84,6 @@ def get_safe_stats(recent_games):
 
 @st.cache_data(show_spinner=False)
 def get_ai_commentary(h_team, a_team, h_stats, a_stats, winner, league):
-    """Uses Gemini to generate punditry."""
     if not GEMINI_KEY: return "⚠️ API Key Missing."
     
     prompt = (f"Act as a witty, slightly sarcastic football pundit (like Roy Keane). "
@@ -84,12 +93,11 @@ def get_ai_commentary(h_team, a_team, h_stats, a_stats, winner, league):
               f"Predicted Winner: {winner}. Keep it short (2 sentences).")
     
     try:
-        # Reverted to gemini-pro for stability
-        model = genai.GenerativeModel("gemini-pro")
+        model = genai.GenerativeModel(ACTIVE_MODEL) 
         response = model.generate_content(prompt)
         return response.text
     except Exception as e: 
-        return f"⚠️ Pundit Error: {str(e)}" 
+        return f"⚠️ Pundit Error ({ACTIVE_MODEL}): {str(e)}" 
 
 def create_interactive_radar(team_name, stats, color):
     fig = go.Figure(go.Scatterpolar(r=stats, theta=['Form', 'Attack', 'Defense'], fill='toself', name=team_name, line=dict(color=color, width=3), fillcolor=f"rgba{tuple(int(color.lstrip('#')[i:i+2], 16) for i in (0, 2, 4)) + (0.3,)}"))
@@ -134,14 +142,6 @@ def adjust_scoreline(winner_code, h_g, a_g):
         if h_g != a_g: h_g = int((h_g + a_g) / 2); a_g = h_g
     return h_g, a_g
 
-def get_csv_name(api_name, team_map):
-    # Try exact match
-    if api_name in team_map: return api_name
-    # Try fuzzy match
-    for k in team_map.keys():
-        if api_name in k or k in api_name: return k
-    return None
-
 def create_trend_chart(recent_games, color):
     if not recent_games: return go.Figure()
     gf = [g['gf'] for g in recent_games]
@@ -175,22 +175,27 @@ def get_live_data(code):
 
 @st.cache_data
 def train_model(div):
+    # Load all CSVs recursively
     files = glob.glob('*.csv') + glob.glob('data/**/*.csv', recursive=True)
     df_list = []
+    
+    # Track found teams for debug
+    found_teams = set()
+    
     for f in files:
         try:
             d = pd.read_csv(f, encoding='unicode_escape') 
+            # Strict Division Check
             if 'HomeTeam' in d.columns and 'Div' in d.columns and d['Div'].iloc[0] == div:
+                d['HomeTeam'] = d['HomeTeam'].str.strip() # CLEAN SPACES
+                d['AwayTeam'] = d['AwayTeam'].str.strip() # CLEAN SPACES
                 df_list.append(d)
+                found_teams.update(d['HomeTeam'].unique())
         except: pass
         
-    if not df_list: return None, None, None, None, None
+    if not df_list: return None, None, None, None, None, []
     
-    # Safe Concat
     df = pd.concat(df_list, ignore_index=True)
-    if 'HomeTeam' not in df.columns or 'AwayTeam' not in df.columns:
-         return None, None, None, None, None
-         
     df = df.dropna(subset=['HomeTeam','AwayTeam'])
     df['Result'] = df['FTR'].map({'H':1, 'D':0, 'A':2})
     teams = sorted(pd.concat([df['HomeTeam'], df['AwayTeam']]).unique())
@@ -203,14 +208,41 @@ def train_model(div):
     rf = RandomForestClassifier(n_estimators=100, random_state=42).fit(df[['HC','AC']], df['Result'])
     rf_hg = RandomForestClassifier(n_estimators=100, random_state=42).fit(df[['HC','AC']], df['FTHG'])
     rf_ag = RandomForestClassifier(n_estimators=100, random_state=42).fit(df[['HC','AC']], df['FTAG'])
-    return rf, rf_hg, rf_ag, codes, df 
+    return rf, rf_hg, rf_ag, codes, df, list(found_teams)
+
+# --- SMART NAME MATCHER (FUZZY) ---
+def find_best_match(api_name, csv_teams):
+    if not csv_teams: return None
+    
+    # 1. Exact Match (Cleaned)
+    api_clean = api_name.strip()
+    if api_clean in csv_teams: return api_clean
+    
+    # 2. Simple Contains (e.g. "Everton FC" -> "Everton")
+    for t in csv_teams:
+        if t in api_clean or api_clean in t:
+            return t
+            
+    # 3. First Word Match (e.g. "Manchester City FC" -> "Man City" - Harder)
+    first_word = api_clean.split(' ')[0]
+    for t in csv_teams:
+        if first_word in t: return t
+        
+    return None
 
 # --- LOAD ---
 with st.spinner(f"Initializing {selected_league_name}..."):
     live_form, all_matches = get_live_data(CURRENT_LEAGUE['code'])
-    rf, rf_hg, rf_ag, team_map, hist_df = train_model(CURRENT_LEAGUE['div'])
+    rf, rf_hg, rf_ag, team_map, hist_df, valid_csv_teams = train_model(CURRENT_LEAGUE['div'])
 
 if not live_form: st.error("⚠️ Data Error. Check API Key."); st.stop()
+
+# --- SIDEBAR DEBUG INFO ---
+with st.sidebar.expander("🛠️ Debug Info"):
+    st.write(f"**Active AI Model:** `{ACTIVE_MODEL}`")
+    st.write(f"**CSV Loaded Rows:** {len(hist_df) if hist_df is not None else 0}")
+    if valid_csv_teams:
+        st.write(f"**Sample CSV Teams:** {', '.join(valid_csv_teams[:5])}...")
 
 # --- MAIN ---
 tab1, tab2 = st.tabs(["🔮 Match Center", "🏆 Standings"])
@@ -222,23 +254,28 @@ with tab1:
             games = r.json()['matches'][:5]
             
             for i, m in enumerate(games):
-                h, a = m['homeTeam']['shortName'], m['awayTeam']['shortName']
-                h_rec, a_rec = live_form.get(h, []), live_form.get(a, [])
+                h_api_name = m['homeTeam']['name']
+                a_api_name = m['awayTeam']['name']
+                h_short = m['homeTeam']['shortName']
+                a_short = m['awayTeam']['shortName']
+
+                h_rec, a_rec = live_form.get(h_short, []), live_form.get(a_short, [])
                 h_stats, a_stats = get_safe_stats(h_rec), get_safe_stats(a_rec)
                 
-                h_csv = get_csv_name(h, team_map)
-                a_csv = get_csv_name(a, team_map)
+                # USE SMART MATCHER
+                h_csv = find_best_match(h_api_name, valid_csv_teams)
+                a_csv = find_best_match(a_api_name, valid_csv_teams)
                 
                 if rf and h_csv and a_csv:
-                    h_c = team_map[h_csv]
-                    a_c = team_map[a_csv]
+                    h_c = team_map.get(h_csv, 0)
+                    a_c = team_map.get(a_csv, 0)
                     pred = rf.predict([[h_c, a_c]])[0]
                     hg = int(rf_hg.predict([[h_c, a_c]])[0]); ag = int(rf_ag.predict([[h_c, a_c]])[0])
                     hg, ag = adjust_scoreline(pred, hg, ag)
                 else:
                     pred = 1; hg=1; ag=0 
                 
-                winner = f"{h} Wins" if pred==1 else f"{a} Wins" if pred==2 else "Draw"
+                winner = f"{h_short} Wins" if pred==1 else f"{a_short} Wins" if pred==2 else "Draw"
                 
                 with st.container():
                     c1, c2, c3 = st.columns([1.2, 1.5, 1.2])
@@ -246,15 +283,15 @@ with tab1:
                         try: st.image(m['homeTeam']['crest'], width=50)
                         except: pass
                         st.markdown(render_form_guide(h_rec), unsafe_allow_html=True)
-                        st.plotly_chart(create_interactive_radar(h, h_stats, '#4ade80'), use_container_width=True, key=f"r_h_{i}", config={'displayModeBar':False})
+                        st.plotly_chart(create_interactive_radar(h_short, h_stats, '#4ade80'), use_container_width=True, key=f"r_h_{i}", config={'displayModeBar':False})
                     with c2:
                         st.markdown(f"<h1 style='text-align:center;margin:0;'>{hg} - {ag}</h1>", unsafe_allow_html=True)
                         st.markdown(f"<p style='text-align:center;color:#94a3b8;'>{winner}</p>", unsafe_allow_html=True)
                         
-                        punditry = get_ai_commentary(h, a, h_stats, a_stats, winner, selected_league_name)
+                        punditry = get_ai_commentary(h_short, a_short, h_stats, a_stats, winner, selected_league_name)
                         st.info(f"🎙️ **The Pundit:** {punditry}")
                         
-                        st.plotly_chart(create_momentum_pulse(h, a, hg, ag, '#4ade80', '#f87171'), use_container_width=True, key=f"p_{i}", config={'displayModeBar':False})
+                        st.plotly_chart(create_momentum_pulse(h_short, a_short, hg, ag, '#4ade80', '#f87171'), use_container_width=True, key=f"p_{i}", config={'displayModeBar':False})
                         
                         with st.expander("⚔️ Head-to-Head History"):
                             if hist_df is not None and h_csv and a_csv:
@@ -264,13 +301,13 @@ with tab1:
                                     for _, row in h2h.iterrows():
                                         st.caption(f"{row['Date']}: {row['HomeTeam']} {int(row['FTHG'])}-{int(row['FTAG'])} {row['AwayTeam']}")
                                 else: st.caption(f"No match history found between {h_csv} and {a_csv}.")
-                            else: st.caption("Could not map teams to history database.")
+                            else: st.caption(f"Mapping Failed: API '{h_api_name}' -> CSV '{h_csv}' not found.")
 
                     with c3:
                         try: st.image(m['awayTeam']['crest'], width=50)
                         except: pass
                         st.markdown(render_form_guide(a_rec), unsafe_allow_html=True)
-                        st.plotly_chart(create_interactive_radar(a, a_stats, '#f87171'), use_container_width=True, key=f"r_a_{i}", config={'displayModeBar':False})
+                        st.plotly_chart(create_interactive_radar(a_short, a_stats, '#f87171'), use_container_width=True, key=f"r_a_{i}", config={'displayModeBar':False})
 
         except Exception as e: st.error(f"Error: {e}")
 
@@ -297,12 +334,13 @@ if live_form:
         h_rec, a_rec = live_form.get(h, []), live_form.get(a, [])
         h_stats, a_stats = get_safe_stats(h_rec), get_safe_stats(a_rec)
         
-        h_csv = get_csv_name(h, team_map)
-        a_csv = get_csv_name(a, team_map)
-        
+        # Simple manual match since API name isn't available
+        h_csv = find_best_match(h, valid_csv_teams)
+        a_csv = find_best_match(a, valid_csv_teams)
+
         if rf and h_csv and a_csv:
-            h_c = team_map[h_csv]
-            a_c = team_map[a_csv]
+            h_c = team_map.get(h_csv, 0)
+            a_c = team_map.get(a_csv, 0)
             pred = rf.predict([[h_c, a_c]])[0]
             hg = int(rf_hg.predict([[h_c, a_c]])[0])
             ag = int(rf_ag.predict([[h_c, a_c]])[0])
@@ -314,7 +352,6 @@ if live_form:
         st.sidebar.success(f"{h} {hg} - {ag} {a}")
         st.sidebar.info(get_ai_commentary(h, a, h_stats, a_stats, winner, selected_league_name))
         
-        # KEY FIX: Unique keys for sidebar charts
         st.sidebar.plotly_chart(create_momentum_pulse(h, a, hg, ag, '#4ade80', '#f87171'), use_container_width=True, key="sb_pulse", config={'displayModeBar':False})
         
         c1, c2 = st.sidebar.columns(2)
