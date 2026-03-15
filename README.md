@@ -200,25 +200,20 @@ Away Win Probability: 17%
 
 ---
 
-# 🎥 Demo
+## 🧠 AI Football Pundit
 
-You can add screenshots or a demo GIF here later.
+This project also includes an **AI Football Pundit module** that provides human-like match insights along with machine learning predictions.
 
-Example:
+The Football Pundit analyzes team statistics, historical performance, and model predictions to generate short analytical commentary about the match.
 
-```
-screenshots/
- ├── homepage.png
- ├── prediction.png
-```
+### Key Capabilities
 
-Then display them like this:
+- Provides **expert-style match analysis**
+- Explains predictions in simple language
+- Highlights possible match scenarios
+- Adds a **human-like interpretation** of machine learning predictions
 
-```markdown
-![App Screenshot](screenshots/homepage.png)
-```
-
----
+This feature enhances the prediction system by combining **data-driven machine learning predictions with football-style pundit analysis**, making the results easier to understand for users.
 
 # 🧪 Testing
 
